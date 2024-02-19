@@ -20,4 +20,4 @@ def send_sms_to_parent(name,age,lat,lon,helper_name,helper_contact,parent_contac
         print(f"Message failed with error: {responseData['messages'][0]['error-text']}")
 
 
-send_sms_to_parent("bhovan","20","16.3448744","80.52477481644553","rizwan","6304447072","8688581004")
+# send_sms_to_parent("bhovan","20","16.3448744","80.52477481644553","rizwan","6304447072","8688581004")

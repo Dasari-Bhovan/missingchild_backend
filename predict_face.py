@@ -33,14 +33,22 @@ def predict_img(file1):
         test_im = get_embedding(t_im)
         test_im = [test_im]
         loaded_data = np.load("custom_training_embeddings.npz")
-        print(loaded_data)
+        # print(loaded_data)
         # Access the 'Y' array
         Y = loaded_data["arr_1"]
         encoder.fit(Y)
+        # print(test_im)
         ypreds = model.predict(test_im)
+        print(ypreds)
+        y_pro=model.predict_proba(test_im)
+        print(y_pro)
         final = encoder.inverse_transform(ypreds)
+        if y_pro[0][ypreds[0]]>0.45:
+            final = encoder.inverse_transform(ypreds)
+        else:
+            final=["No image matched_0"]
     except:
-        final=["No Image Found"]
+        final=["No face found_0"]
     print(final)
     return final[0] 
 

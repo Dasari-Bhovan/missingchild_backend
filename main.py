@@ -5,6 +5,7 @@ import os
 from dotenv import load_dotenv
 import jwt 
 import pyrebase
+import base64
 # from flask_session import Session
 from flask_cors import CORS
 from pymongo import MongoClient
@@ -211,7 +212,7 @@ def report_missing_child():
     images = request.files.getlist('images')
     res_uid1=collection1.find_one({"token":token})
     uid=res_uid1["uid"]
-    # email=res_uid1["email"]
+    email=res_uid1["username"]
 
     if not name or not age or not height or not description or not last_seen_time or not last_seen_location:
         return jsonify({'error': 'Name, age, height, description, last_seen_time, and last_seen_location are required.'}), 400
@@ -255,25 +256,28 @@ def report_missing_child():
     else:
         return jsonify({'error': 'Failed to create missing child report.'}), 500
 
-@app.route('/update_profile', methods=['POST'])
+@app.route('/update_profile', methods=['GET'])
 def update_profile():
     collection1=db["login_info"]
     collection_profiles=db['profile_info']
-    token = request.form.get('token')
-    pincode=request.form.get('pincode')
-    email = request.form.get('email')# Assuming you store the email in the session during login
-    phone_number = request.form.get('phone_number')
+    token = request.args.get('token')
+    pincode=request.args.get('pincode')
+    # email = request.args.get('email')# Assuming you store the email in the session during login
+    phone_number = request.args.get('phone_number')
+    age = request.args.get('age')
+    gender = request.args.get('gender')
+    height = request.args.get('height')
+    weight=request.args.get('weight')
     # Retrieve form data including additional fields
-    full_name = request.form.get('full_name')
-    date_of_birth = request.form.get('date_of_birth')
-    address = request.form.get('address')
-    photo = request.files.get('photo')
-    gender = request.form.get('gender')
-    occupation = request.form.get('occupation')
+    full_name = request.args.get('full_name')
+    # date_of_birth = request.form.get('date_of_birth')
+    address = request.args.get('address')
+    occupation = request.args.get('occupation')
     # interests = request.form.get('interests')
-    emergency_contact = request.form.get('emergency_contact')
+    # emergency_contact = request.form.get('emergency_contact')
     res_uid1=collection1.find_one({"token":token})
     uid=res_uid1["uid"]
+    email=res_uid1["username"]
     # Get the existing profile data
     existing_profile = collection_profiles.find_one({'email': email})
 
@@ -281,20 +285,22 @@ def update_profile():
     updated_fields = {}
     if full_name:
         updated_fields['full_name'] = full_name
-    if date_of_birth:
-        updated_fields['date_of_birth'] = date_of_birth
+    if age:
+        updated_fields['age'] = age
     if address:
         updated_fields['address'] = address
-    if photo:
-        updated_fields['photo'] = save_photo(photo, uid)
     if gender:
         updated_fields['gender'] = gender
     if occupation:
         updated_fields['occupation'] = occupation
     if pincode:
         updated_fields['pincode'] = pincode
-    if emergency_contact:
-        updated_fields['emergency_contact'] = emergency_contact
+    if phone_number:
+        updated_fields['phone_number'] = phone_number
+    if height:
+        updated_fields['height'] = height
+    if weight:
+        updated_fields['weight'] = weight
 
     # Update the profile data
     result = collection_profiles.update_one({'email': email}, {'$set': updated_fields})
@@ -303,26 +309,105 @@ def update_profile():
         return jsonify({'message': 'Profile updated successfully.'}), 200
     else:
         return jsonify({'message': 'No changes to update.'}), 200
+    
+@app.route('/profile', methods=['PUT'])
+def get_profile():
+    # Retrieve email from request headers or wherever it's stored
+    collection1=db["login_info"]
+    collection=db['profile_info']
 
-@app.route('/get_user_profiles', methods=['GET'])
-def get_user_profiles():
+    token=request.form.get('token')
+    res_uid1=collection1.find_one({"token":token})
+
+    uid=res_uid1["uid"]
+    email=res_uid1["username"]
+    print(email)
+    user_profiles=collection.find_one({"email":email})
+    print(user_profiles)
+    user_profiles["_id"]=str(user_profiles["_id"])
+    user_profiles["uid"]=uid
+    
+    # email = request.headers.get('email')
+    if not user_profiles:
+        return jsonify({'error': 'Profile not found'}), 404
+
+    return jsonify(user_profiles), 200
+
+@app.route('/profile_img', methods=['POST'])
+def profile_img():
+    # Retrieve email from request headers or wherever it's stored
+    collection1=db["login_info"]
+    collection=db['profile_info']
+
+    token=request.form.get('token')
+    image=request.files["photo"]
+    res_uid1=collection1.find_one({"token":token})
+    
+    uid=res_uid1["uid"]
+    
+    options = { 
+    'invalidate': True, 
+    'overwrite': True   
+    }
+    if image:
+        uploaded_image=cloudinary.uploader.upload(image,public_id = "profile/"+uid+".png",options=options)
+        image.seek(0)
+        public_url = uploaded_image['secure_url']
+        collection.update_one({"email": res_uid1["username"]}, {"$set": {"profile_picture_url": public_url}})
+        
+        image.save(os.path.join("profile_dp/", uid+ ".jpg"))
+        image.seek(0)
+        # x=get_base64(image)
+
+    # print(email)
+    # user_profiles=collection.find_one({"email":email})
+    # print(user_profiles)
+    # user_profiles["_id"]=str(user_profiles["_id"])
+    # email = request.headers.get('email')
+    # if not user_profiles:
+    #     return jsonify({'error': 'Profile not found'}), 404
+
+    return jsonify({"message":"profile_uploaded_success"}), 200
+
+
+@app.route('/get_reports', methods=['GET'])
+def get_reports():
+
     collection_profiles=db['children_info']
     matched_profiles=db['matching_info']
+    collection1=db['login_info']
     # Parse query parameters for search and filtering
+    token=request.args.get('token')
     search_query = request.args.get('search_query')
     gender = request.args.get('gender')
     min_age = request.args.get('min_age')
     max_age = request.args.get('max_age')
+    min_height = request.args.get('min_height')
+    max_height = request.args.get('max_height')
+    min_weight = request.args.get('min_weight')
+    max_weight = request.args.get('max_weight')
     min_last_seen_time = request.args.get('min_last_seen_time')
     max_last_seen_time = request.args.get('max_last_seen_time')
     is_matched = request.args.get('is_matched')
     sort_field=request.args.get('sort_field')
     sort_order=request.args.get('sort_order')
+    record_type=request.args.get('record_type')
+    state=request.args.get('state')
+    temp_sort="_id"
+    if token:
+        res_uid1=collection1.find_one({"token":token})
+        # uid=res_uid1["uid"]
+        email=res_uid1["username"]
+    
+    if is_matched:
+        is_matched=bool(int(is_matched))
     # occupation = request.args.get('occupation')
     # Add more filter parameters as needed
 
     # Construct the query based on filters
     query = {}
+    if sort_field:
+        temp_sort=sort_field
     if search_query:
         query['$or'] = [
             {'name': {'$regex': f'.*{search_query}.*', '$options': 'i'}},
@@ -333,37 +418,71 @@ def get_user_profiles():
     if min_age or max_age:
         query['age'] = {}  # Create a nested dictionary for date of birth range query
         if min_age:
-            query['age']['$gte'] = min_age
+            query['age']['$gte'] = int(min_age)
         if max_age:
-            query['age']['$lte'] = max_age
+            query['age']['$lte'] = int(max_age)
+    if min_height or max_height:
+        query['height'] = {}  # Create a nested dictionary for date of birth range query
+        if min_height:
+            query['height']['$gte'] = int(min_height)
+        if max_height:
+            query['height']['$lte'] = int(max_height)
+    if min_weight or max_weight:
+        query['weight'] = {}  # Create a nested dictionary for date of birth range query
+        if min_weight:
+            query['weight']['$gte'] = int(min_weight)
+        if max_weight:
+            query['weight']['$lte'] = int(max_weight)
     if min_last_seen_time or max_last_seen_time:
         query['last_seen_time'] = {}  # Create a nested dictionary for last seen time range query
         if min_last_seen_time:
             query['last_seen_time']['$gte'] = datetime.strptime(min_last_seen_time, '%Y-%m-%d')
         if max_last_seen_time:
             query['last_seen_time']['$lte'] = datetime.strptime(max_last_seen_time, '%Y-%m-%d')
-    if is_matched is not None:
-        query['is_matched'] = bool(is_matched)
+    # if is_matched is not None:
+    #     query['is_matched'] = bool(is_matched)
+    if record_type:
+        query["email"]=email
+    if state:
+        query["state"]=state
+    
         # query['$or'] = [{'full_name': {'$regex': search_query, '$options': 'i'}}, {'address': {'$regex': search_query, '$options': 'i'}}]
     # if gender:
     #     query['gender'] = gender
     # if occupation:
     #     query['occupation'] = occupation
         
-    user_reports= list(collection_profiles.find(query).sort("age", 1 if sort_order == 'asc' else -1))
+    user_reports= list(collection_profiles.find(query).sort(temp_sort, -1 if sort_order == 'desc' else 1))
     matched_profiles=list(matched_profiles.find({"matched":True}))
-    print(user_reports,matched_profiles)
+    # print(user_reports,matched_profiles)
     for i in user_reports:
         i['_id'] = str(i['_id'])
         i['last_seen_time']=str(i['last_seen_time'])
         i["matched"]=False
+        # i["base64"]=get_base64(r"training"+"\\"+"NKfotAlsifZ1eqa5QhRmfBkoOMV2_Vara"+"\\1.jpg")
         for j in matched_profiles:
             if i["images"]==j["child_id"]:
+
                 i["matched"]=True
                 i['helper_profile_email']=j['helper_profile']["email"]
                 i['helper_full_name']=j['helper_full_name']
                 i['helper_phone']=j['helper_phone']
+                i['matched_location']=j["location"]
                 break
+    matched=[]
+    not_matched=[]
+    for i in user_reports:
+        if i["matched"]==True:
+            matched.append(i)
+        else:
+            not_matched.append(i)
+    print(matched)
+    if is_matched==True:
+        print("matched",matched)
+        return jsonify({'reports': list(matched)}), 200
+    elif is_matched==False:
+        print("not_matched",not_matched)
+        return jsonify({'reports': list(not_matched)}),200
         
     return jsonify({'reports': list(user_reports)}), 200
     
@@ -389,19 +508,9 @@ def predict():
     helper_phone=helper_profile["phone_number"]
     helper_full_name=helper_profile["full_name"]
     x=predict_img(image_loc)
-    c=x.split("_")
-    temp_child={
-        'images':x
-    }
-
-    child_name=c[1]
     
-    res=child_profile.find_one(temp_child)
-    child_age=res["age"]
-    child_description=res["description"]
-    # email=res["email"]
-    # parent_profile=db["profile_info"]
-    mobile=res["alternate_mobile"]
+    
+    
 
     # res=profile.find_one({"child_name":child_name})
     
@@ -409,7 +518,20 @@ def predict():
     # Verify login before allowing logout
     # if existing_session:
     #     collection.delete_one(temp_session)
-    if x!="No image Found":
+    print(not(x=="No image matched_0" or x=="No face found_0"))
+    if not(x=="No image matched_0" or x=="No face found_0"):
+        c=x.split("_")
+        temp_child={
+            'images':x
+        }
+        child_name=c[1]
+    
+        res=child_profile.find_one(temp_child)
+        child_age=res["age"]
+        child_description=res["description"]
+        # email=res["email"]
+        # parent_profile=db["profile_info"]
+        mobile=res["alternate_mobile"]
         res={
         'image':image_loc,
         'email':email,
@@ -443,6 +565,41 @@ def predict():
         return jsonify({"message":"No Face matched with the records"}),500
     # else:
     #     return jsonify({'error': 'You are not logged in.'}), 401
+
+@app.route('/children/<child_id>/emergency_contacts', methods=['PUT'])
+def update_emergency_contacts(child_id):
+    # Retrieve request data
+    data = request.json
+    name1 = data.get('name1')
+    relation1 = data.get('relation1')
+    phone_number1 = data.get('phone_number1')
+    email1 = data.get('email1')
+    name2 = data.get('name2')
+    relation2 = data.get('relation2')
+    phone_number2 = data.get('phone_number2')
+    email2 = data.get('email2')
+
+    # Validate input data
+    if not all([name1, relation1, phone_number1, email1, name2, relation2, phone_number2, email2]):
+        return jsonify({'error': 'All fields are required.'}), 400
+
+    # Construct update query
+    update_query = {
+        '$set': {
+            'emergency_contacts': [
+                {'name': name1, 'relation': relation1, 'phone_number': phone_number1, 'email': email1},
+                {'name': name2, 'relation': relation2, 'phone_number': phone_number2, 'email': email2}
+            ]
+        }
+    }
+
+    # Update child document in the database
+    result = collection_children_info.update_one({'_id': ObjectId(child_id)}, update_query)
+
+    if result.modified_count > 0:
+        return jsonify({'message': 'Emergency contacts updated successfully.'}), 200
+    else:
+        return jsonify({'error': 'Failed to update emergency contacts.'}), 500
 def save_photo_matching(photo, uid):
     if photo:
         x=os.getcwd()
@@ -453,6 +610,7 @@ def save_photo_matching(photo, uid):
         file_loc=os.path.join(dest_directory, count+".jpg")
         photo.save(file_loc)
         return file_loc
+    
 def save_photo(photo, uid):
     if photo:
         x=os.getcwd()
@@ -481,6 +639,11 @@ def save_images(images,uid,name):
         file.save(os.path.join(destination_directory, str(count) + ".jpg"))
     return uid+"_"+name
 
+def get_base64(image):
+
+    with open(image, "rb") as img_file:
+        encoded_string = base64.b64encode(img_file.read()).decode('utf-8')
+        return encoded_string
 
 if __name__ == '__main__':
     app.run(debug=True)
